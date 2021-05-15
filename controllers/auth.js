@@ -1,64 +1,122 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const client = require("../configs/db");
 
-const temporaryData = [
-  {
-    name: "Kunal",
-    email: "kunal@gmail.com",
-    password: "rameshsuresh",
-  },
-  {
-    name: "Nikhil",
-    email: "nikhil@gmail.com",
-    password: "rameshsuresh",
-  },
-  {
-    name: "Harsh",
-    email: "harsh@gmail.com",
-    password: "rameshsuresh",
-  },
-];
+// const temporaryData = [
+//   {
+//     name: "Kunal",
+//     email: "kunal@gmail.com",
+//     password: "rameshsuresh",
+//   },
+//   {
+//     name: "Nikhil",
+//     email: "nikhil@gmail.com",
+//     password: "rameshsuresh",
+//   },
+//   {
+//     name: "Harsh",
+//     email: "harsh@gmail.com",
+//     password: "rameshsuresh",
+//   },
+// ];
 
 exports.signUp = (req, res) => {
   const { name, email, password } = req.body;
+  // const isValid = temporaryData.findIndex((ele) => ele.email === email);
 
-  const isValid = temporaryData.findIndex((ele) => ele.email === email);
+  client
+    .query(`SELECT * FROM users WHERE email = '${email}';`)
+    .then((data) => {
+      isValid = data.rows;
 
-  if (isValid !== -1) {
-    res.status(400).json({
-      error: "User already exists.",
-    });
-  }
+      if (isValid.length !== 0) {
+        res.status(400).json({
+          error: "User already exists.",
+        });
+      } else {
+        bcrypt.hash(password, 10, (err, hash) => {
+          if (err) {
+            res.status(500).json({
+              error: "Internal server error.",
+            });
+          }
+          const user = {
+            name,
+            email,
+            password: hash,
+          };
 
-  const token = jwt.sign(
-    {
-      email: email,
-    },
-    process.env.SECRET_KEY
-  );
-
-  bcrypt.hash(password, 10, (err, hash) => {
-    if (err) {
+          client
+            .query(
+              `INSERT INTO users (name, email, password) VALUES ('${user.name}', '${user.email}' , '${user.password}');`
+            )
+            .then((data) => {
+              const token = jwt.sign(
+                {
+                  email: email,
+                },
+                process.env.SECRET_KEY
+              );
+              res.status(200).json({
+                message: "User added successfully to database",
+                token: token,
+              });
+            })
+            .catch((err) => {
+              res.status(500).json({
+                error: "Database error occurred!",
+              });
+            });
+        });
+      }
+    })
+    .catch((err) => {
       res.status(500).json({
-        error: "Internal server error.",
+        error: "Database error occurred!",
       });
-    }
-    const user = {
-      name,
-      email,
-      password: hash,
-    };
-
-    temporaryData.push(user);
-
-    console.log(temporaryData);
-    res.status(200).json({
-      message: "User added successfully to database",
-      token: token,
     });
-  });
 };
 
 exports.signIn = (req, res) => {
-  //TODO: complete signup
+  const { email, password } = req.body;
+
+  client
+    .query(`SELECT * FROM users WHERE email = '${email}';`)
+    .then((data) => {
+      userData = data.rows;
+      // []
+      if (userData.length === 0) {
+        res.status(400).json({
+          error: "User does not exist, signup instead!",
+        });
+      } else {
+        bcrypt.compare(password, userData[0].password, (err, result) => {
+          if (err) {
+            res.status(500).json({
+              error: "Server error!",
+            });
+          } else if (result === true) {
+            const token = jwt.sign(
+              {
+                email: email,
+              },
+              process.env.SECRET_KEY
+            );
+            res.status(200).json({
+              message: "User signed in successfully",
+              token: token,
+            });
+          } else {
+            res.status(400).json({
+              error: "Enter correct password!",
+            });
+          }
+        });
+      }
+    })
+    .catch((err) => {
+      res.status(500).json({
+        error: "Database error occurred!",
+      });
+    });
 };
